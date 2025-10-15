@@ -313,7 +313,23 @@ class Perceptron:
         # - loop epochs:
         #     - for each sample, if y_i * (w^T x_i) <= 0: w += eta * y_i * x_i
         #     - count errors; if 0 -> break
-        raise NotImplementedError
+        rng = np.random.default_rng(42)
+        self.w = np.zeros(self.X_aug.shape[1], dtype=float)
+        for epoch in range(1, max_iter + 1):
+            errors = 0
+            idx = np.arange(self.X_aug.shape[0])
+            rng.shuffle(idx)  # better convergence
+            for i in idx:
+                xi = self.X_aug[i]
+                yi = self.y[i]
+                if yi * (self.w @ xi) <= 0:
+                    self.w += eta * yi * xi
+                    errors += 1
+            if errors == 0:
+                self.iterations = epoch
+                return self.w, epoch
+        self.iterations = max_iter
+        return self.w, max_iter
 
     def predict(self, X):
         """
@@ -326,16 +342,39 @@ class Perceptron:
             ndarray: predictions in {-1,+1}, shape (n_samples,)
         """
         # TODO: augment with ones, return sign(X_aug @ self.w)
-        raise NotImplementedError
+        X_aug = np.hstack([X, np.ones((X.shape[0],1))])
+        s = X_aug @ self.w
+        return np.where(s >= 0, 1, -1)
 
-    def plot_decision_boundary(self, title="xx-123456789-perceptron"):
+    def plot_decision_boundary(self, title="spp-907394064-perceptron"):
         """
         Plot training points and the learned decision boundary w1*x1 + w2*x2 + b = 0.
         """
         # TODO:
         # - scatter positive/negative class
         # - if w2 != 0: y = -(w1*x + b)/w2; else draw vertical line
-        raise NotImplementedError
+        plt.figure(figsize=(6,4))
+        pos = (self.y == 1)
+        neg = (self.y == -1)
+        plt.scatter(self.X[pos,0], self.X[pos,1], s=24, label="+1")
+        plt.scatter(self.X[neg,0], self.X[neg,1], s=24, marker="x", label="-1")
+
+        w1, w2, b = self.w
+        if abs(w2) > 1e-12:
+            xs = np.linspace(self.X[:,0].min()-1, self.X[:,0].max()+1, 300)
+            ys = -(w1*xs + b)/w2
+            plt.plot(xs, ys, linewidth=2, label="decision boundary")
+        else:
+            x_line = -b/w1 if abs(w1) > 1e-12 else 0.0
+            plt.axvline(x_line, linewidth=2, label="decision boundary")
+
+        plt.xlabel("x1"); plt.ylabel("x2")
+        plt.legend()
+        plt.title(title)
+        plt.tight_layout()
+        plt.savefig(f"{title}.png", dpi=200)
+        print(f"Saved perceptron plot to {title}.png")
+        plt.show()
 
 
 # ========== Main ==========
@@ -364,9 +403,9 @@ if __name__ == "__main__":
     # -------- Part III --------
     per = Perceptron("data2.csv")
     # Example usage (students may try several etas, but only submit the best plot):
-    # w, iters = per.fit(eta=0.1, max_iter=10000)
-    # print(f"Converged in {iters} iterations.")
-    # per.plot_decision_boundary(title="xx-123456789-perceptron")
+    w, iters = per.fit(eta=0.1, max_iter=10000)
+    print(f"Converged in {iters} iterations.")
+    per.plot_decision_boundary(title="spp-907394064-perceptron")
 
 
 
