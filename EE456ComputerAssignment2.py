@@ -148,7 +148,21 @@ class BayesianClassifier:
         
         mu = self.means[c]
         Sigma = self.covs[c]
-        
+        # regularization for numerical stability
+        Sigma = Sigma + 1e-6 * np.eye(2)
+
+        sign, lodget = np.linalg.slogdet(Sigma)
+        if sign <= 0:
+            Sigma = Sigma + 1e-3 * np.eye(2)
+            sign, lodget = np.linalg.slogdet(Sigma)
+
+        diff = x - mu
+        # quadriatic form: (x-mu)^T Sigma^{-1} (x-mu) via solve
+        alpha = np.linalg.solve(Sigma, diff)
+        quad = float(diff.T @ alpha)
+
+        d = 2
+        return -0.5 * (d * np.log(2*np.pi) + lodget + quad)
 
     def discriminant(self, x, c):
         """
@@ -158,7 +172,7 @@ class BayesianClassifier:
             float
         """
         # TODO: use self.log_likelihood(x,c) + np.log(self.priors[c])
-        raise NotImplementedError
+        return self.log_likelihood(x, c) + np.log(self.priors[c])
 
     def predict(self, X):
         """
@@ -171,7 +185,13 @@ class BayesianClassifier:
             ndarray: predicted labels, shape (n_samples,)
         """
         # TODO: for each x, compute g_c(x) for all c and take argmax
-        raise NotImplementedError
+        Cs = self.classes
+        yhat = []
+        for x in X:
+            gs = [self.discriminant(x, c) for c in Cs]
+            yhat.append(Cs[int(np.argmax(gs))])
+        return np.array(yhat, dtype=int)
+
 
     def evaluate(self, X_test, y_test):
         """
@@ -188,7 +208,30 @@ class BayesianClassifier:
         # - acc = mean(y_pred == y_test)
         # - nll via log-sum-exp over g_c(x)
         # - confusion matrix via simple counting
-        raise NotImplementedError
+        Cs = self.classes
+        K = len(Cs)
+        c2i = {c:i for i,c in enumerate(Cs)}
+
+        # predictions
+        y_pred = self.predict(X_test)
+        acc = float(np.mean(y_pred == y_test))
+
+        # NLL via stable log-sum-exp
+        n = len(y_test)
+        total_log_py = 0.0
+        for x, yt in zip(X_test, y_test):
+            gs = np.array([self.discriminant(x, c) for c in Cs], dtype=float)
+            m = np.max(gs)
+            logsumexp = m + np.log(np.sum(np.exp(gs - m)))
+            total_log_py += (gs[c2i[yt]] - logsumexp)
+        nll = - total_log_py / n
+
+        # confusion matrix
+        cm = np.zeros((K, K), dtype=int)
+        for yt, yp in zip(y_test, y_pred):
+            cm[c2i[yt], c2i[yp]] += 1
+
+        return acc, nll, cm, y_pred
 
     def plot_decision_regions(self, X_train, X_test, y_test, y_pred, title="xx-123456789-bayes"):
         """
@@ -205,7 +248,37 @@ class BayesianClassifier:
         # - make meshgrid over [min-1, max+1] from training set
         # - predict grid -> reshape -> contourf/pcolormesh
         # - scatter test points per class; circle misclassified
-        raise NotImplementedError
+        x_min, x_max = X_train[:,0].min() - 1.0, X_train[:,0].max() + 1.0
+        y_min, y_max = X_train[:,1].min() - 1.0, X_train[:,1].max() + 1.0
+        xx, yy = np.meshgrid(np.linspace(x_min, x_max, 400),
+                            np.linspace(y_min, y_max, 400))
+        grid = np.c_[xx.ravel(), yy.ravel()]
+        Z = self.predict(grid).reshape(xx.shape)
+
+        plt.figure(figsize=(6,4))
+        # decision regions
+        plt.contourf(xx, yy, Z, alpha=0.25, levels=len(self.classes))
+
+        # overlay test points per class
+        for c, marker in zip(self.classes, ['o','s','^','x','d']):
+            mask = (y_test == c)
+            plt.scatter(X_test[mask,0], X_test[mask,1],
+                        s=30, marker=marker, label=f"test c={c}", edgecolors='k', linewidths=0.3)
+
+        # highlight misclassified
+        mis = (y_pred != y_test)
+        if np.any(mis):
+            plt.scatter(X_test[mis,0], X_test[mis,1],
+                        s=80, facecolors='none', edgecolors='red', linewidths=1.5, label="misclassified")
+
+        plt.xlabel("x1")
+        plt.ylabel("x2")
+        plt.legend(loc="best", fontsize=8)
+        plt.title(title)
+        plt.tight_layout()
+        plt.savefig(f"{title}.png", dpi=200)
+        print(f"Decision plot saved as {title}.png")
+        plt.show()
 
 
 # ========== Part III: Perceptron ==========
@@ -280,13 +353,13 @@ if __name__ == "__main__":
     # -------- Part II --------
     bayes = BayesianClassifier(priors, means, covs)
     # After students implement methods above, they should uncomment the following:
-    # acc, nll, cm, y_pred = bayes.evaluate(mle.X_test, mle.y_test)
-    # print("\n=== Bayesian Classifier Results ===")
-    # print("Accuracy:", acc)
-    # print("NLL:", nll)
-    # print("Confusion Matrix (rows=true, cols=pred):\n", cm)
-    # bayes.plot_decision_regions(mle.X_train, mle.X_test, mle.y_test, y_pred,
-    #                             title="xx-123456789-bayes")
+    acc, nll, cm, y_pred = bayes.evaluate(mle.X_test, mle.y_test)
+    print("\n=== Bayesian Classifier Results ===")
+    print("Accuracy:", acc)
+    print("NLL:", nll)
+    print("Confusion Matrix (rows=true, cols=pred):\n", cm)
+    bayes.plot_decision_regions(mle.X_train, mle.X_test, mle.y_test, y_pred,
+                                title="spp-907394064-bayes")
 
     # -------- Part III --------
     per = Perceptron("data2.csv")
